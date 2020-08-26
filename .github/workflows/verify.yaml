@@ -1,4 +1,4 @@
-name: Verify Build Workflow
+name: Verify Build Workflow Test
 on:
   push:
     paths-ignore:
