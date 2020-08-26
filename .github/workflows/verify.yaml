@@ -21,7 +21,7 @@ jobs:
   build-verify:
     name: Verify Build
     runs-on: ubuntu-latest
-    if: github.repository_owner == 'Apiman'
+    if: github.repository_owner == 'e2ebridge'
     steps:
       - name: Checkout Code
         uses: actions/checkout@v2
