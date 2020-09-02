@@ -247,7 +247,7 @@ public class EsStorage extends AbstractEsComponent implements IStorage, IStorage
      */
     @Override
     public void createOrganization(OrganizationBean organization) throws StorageException {
-        indexEntity(EsConstants.INDEX_MANAGER_POSTFIX_ORGANIZATION, organization.getId(), EsMarshalling.marshall(organization), true);
+        indexEntity(EsConstants.INDEX_MANAGER_POSTFIX_ORGANIZATION, organization.getId(), EsMarshalling.marshall(organization));
     }
 
     /**
@@ -287,7 +287,7 @@ public class EsStorage extends AbstractEsComponent implements IStorage, IStorage
                 }
         }
         contract.setId(generateGuid());
-        indexEntity(EsConstants.INDEX_MANAGER_POSTFIX_CONTRACT, String.valueOf(contract.getId()), EsMarshalling.marshall(contract), true);
+        indexEntity(EsConstants.INDEX_MANAGER_POSTFIX_CONTRACT, String.valueOf(contract.getId()), EsMarshalling.marshall(contract));
     }
 
     /**
@@ -427,7 +427,7 @@ public class EsStorage extends AbstractEsComponent implements IStorage, IStorage
     @Override
     public void createPlugin(PluginBean plugin) throws StorageException {
         plugin.setId(generateGuid());
-        indexEntity(EsConstants.INDEX_MANAGER_POSTFIX_PLUGIN, String.valueOf(plugin.getId()), EsMarshalling.marshall(plugin), true);
+        indexEntity(EsConstants.INDEX_MANAGER_POSTFIX_PLUGIN, String.valueOf(plugin.getId()), EsMarshalling.marshall(plugin));
     }
 
     /**
@@ -633,8 +633,6 @@ public class EsStorage extends AbstractEsComponent implements IStorage, IStorage
             shouldFilter.add(QueryBuilders.termQuery("organizationId", orgId));
             shouldFilter.add(QueryBuilders.termQuery("clientOrganizationId", orgId));
             shouldFilter.add(QueryBuilders.termQuery("apiOrganizationId", orgId));
-
-            SearchSourceBuilder query = new SearchSourceBuilder().query(qb);
 
             String[] indexNames = {
                     EsConstants.INDEX_MANAGER_POSTFIX_API,
@@ -850,6 +848,7 @@ public class EsStorage extends AbstractEsComponent implements IStorage, IStorage
         }
 
         DeleteByQueryRequest deleteByQueryRequest = new DeleteByQueryRequest(indexNames);
+        deleteByQueryRequest.setRefresh(true);
         deleteByQueryRequest.setQuery(query);
         return getClient().deleteByQuery(deleteByQueryRequest, RequestOptions.DEFAULT);
     }
@@ -1813,7 +1812,7 @@ public class EsStorage extends AbstractEsComponent implements IStorage, IStorage
     public void createMembership(RoleMembershipBean membership) throws StorageException {
         membership.setId(generateGuid());
         String id = id(membership.getOrganizationId(), membership.getUserId(), membership.getRoleId());
-        indexEntity(EsConstants.INDEX_MANAGER_POSTFIX_ROLE_MEMBERSHIP, id, EsMarshalling.marshall(membership), true); //$NON-NLS-1$
+        indexEntity(EsConstants.INDEX_MANAGER_POSTFIX_ROLE_MEMBERSHIP, id, EsMarshalling.marshall(membership)); //$NON-NLS-1$
     }
 
     /**
@@ -1967,35 +1966,22 @@ public class EsStorage extends AbstractEsComponent implements IStorage, IStorage
 
     /**
      * Indexes an entity.
-     * @param type
-     * @param id
-     * @param sourceEntity
-     * @throws StorageException
-     */
-    private void indexEntity(String type, String id, XContentBuilder sourceEntity) throws StorageException {
-        indexEntity(type, id, sourceEntity, false);
-    }
-
-    /**
-     * Indexes an entity.
      * @param type the entity type
      * @param id the entity id
      * @param sourceEntity the source entity
-     * @param refresh true if the operation should wait for a refresh before it returns
      * @throws StorageException thows a Storage Exception if something goes wrong during storing the data
      */
     @SuppressWarnings("nls")
-    private void indexEntity(String type, String id, XContentBuilder sourceEntity, boolean refresh)
+    private void indexEntity(String type, String id, XContentBuilder sourceEntity)
             throws StorageException {
         try {
             String json = Strings.toString(sourceEntity);
             String fullIndexName = getFullIndexName(type);
 
             IndexRequest indexRequest = new IndexRequest(fullIndexName).id(id).source(json, XContentType.JSON);
-            if (refresh) {
-                // WAIT_UNTIL same as "wait_for" => Leave this request open until a refresh has made the contents of this request visible to search
-                indexRequest.setRefreshPolicy(WriteRequest.RefreshPolicy.WAIT_UNTIL);
-            }
+            // WAIT_UNTIL same as "wait_for" => Leave this request open until a refresh has made the contents of this request visible to search
+            indexRequest.setRefreshPolicy(WriteRequest.RefreshPolicy.WAIT_UNTIL);
+
             IndexResponse indexResponse = getClient().index(indexRequest, RequestOptions.DEFAULT);
 
             if (!indexResponse.status().equals(RestStatus.CREATED) && !indexResponse.status().equals(RestStatus.OK)) {
@@ -2059,7 +2045,11 @@ public class EsStorage extends AbstractEsComponent implements IStorage, IStorage
      */
     private void deleteEntity(String type, String id) throws StorageException {
         try {
-            DeleteResponse response = getClient().delete(new DeleteRequest(getFullIndexName(type), id), RequestOptions.DEFAULT);
+            final DeleteRequest deleteRequest = new DeleteRequest(getFullIndexName(type), id);
+            // WAIT_UNTIL same as "wait_for" => Leave this request open until a refresh has made the contents of this request visible to search
+            deleteRequest.setRefreshPolicy(WriteRequest.RefreshPolicy.WAIT_UNTIL);
+
+            DeleteResponse response = getClient().delete(deleteRequest, RequestOptions.DEFAULT);
             if (!response.status().equals(RestStatus.OK)) {
                 throw new StorageException("Document could not be deleted because it did not exist - expected Status Code " + RestStatus.OK + " given: " + response.status()); //$NON-NLS-1$
             }
@@ -2082,6 +2072,8 @@ public class EsStorage extends AbstractEsComponent implements IStorage, IStorage
             String doc = Strings.toString(source);
             String fullIndexName = getFullIndexName(type);
             IndexRequest indexRequest = new IndexRequest(fullIndexName).id(id).source(doc, XContentType.JSON);
+            // WAIT_UNTIL same as "wait_for" => Leave this request open until a refresh has made the contents of this request visible to search
+            indexRequest.setRefreshPolicy(WriteRequest.RefreshPolicy.WAIT_UNTIL);
             getClient().index(indexRequest, RequestOptions.DEFAULT);
         } catch (Exception e) {
             throw new StorageException(e);
